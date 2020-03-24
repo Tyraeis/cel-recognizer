@@ -235,7 +235,7 @@ if __name__ == '__main__':
         s = frame_num / fps
         m = s // 60
         s = math.floor(s % 60)
-        return f'{m:d}:{s:02d}'
+        return f'{int(m)}:{s:02d}'
 
     cel = imread(cel_path)
     cr = CelRecognizer(work_dir, cel, (120, 90))
