@@ -4,6 +4,7 @@ from PySide2.QtGui import *
 from PySide2.QtMultimedia import *
 from PySide2.QtMultimediaWidgets import *
 import sys
+import os
 import multiprocessing
 
 from video_controls import *
@@ -109,6 +110,9 @@ def cleanup():
         proc.close()
 
 if __name__ == '__main__':
+    multiprocessing.freeze_support()
+    os.environ['QT_ENABLE_HIGHDPI_SCALING'] = '1'
+
     app = QApplication(sys.argv)
     
     player = MainWindow()
