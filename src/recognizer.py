@@ -1,6 +1,12 @@
 import math
+import time
+from multiprocessing import Process, Pipe
+
 import numpy as np
 import cv2
+from PySide2.QtCore import QObject, QTimer, Signal
+
+from threading import Thread
 from video import Video
 
 class CelRecognizer:
@@ -56,7 +62,7 @@ class CelRecognizer:
         std = np.std(distances, axis=0)[1]
         # Note: the lack of an absolute value in finding the deviance from the mean is intentional.
         # We only care about outliers that are below the mean, as those are the ones that could be matches.
-        return [ (label, dist) for label, dist in distances if mean - dist > 4 * std ]
+        return [ (label, dist) for label, dist in distances if mean - dist > 3 * std ]
     
     def find_possible_matches(self, video, batch_duration=1000, on_batch=None):
         """Finds possible uses of the cel in a video.
@@ -89,7 +95,7 @@ class CelRecognizer:
 
                 # Run the on_batch callback if given
                 if on_batch is not None:
-                    on_batch(batch_min_dist, self._find_outliers(distances))
+                    on_batch(batch_min_dist, distances)
                 
                 # Start a new batch
                 batch_index = current_time // batch_duration
@@ -104,11 +110,57 @@ class CelRecognizer:
         
         # Run the on_batch callback if given
         if on_batch is not None:
-            on_batch(batch_min_dist, self._find_outliers(distances))
+            on_batch(batch_min_dist, distances)
 
         # Return all of the batches that were outliers below the mean, as those are the
         # ones that might be a match
-        return self._find_outliers(distances)
+        return distances
+
+
+def _recognizer_worker_func(conn, cel_path, video_path):
+    print(cel_path, video_path)
+    cel = cv2.cvtColor(cv2.imread(cel_path), cv2.COLOR_BGR2GRAY)
+    recognizer = CelRecognizer(cel)
+    video = Video(video_path)
+    recognizer.find_possible_matches(video,
+        on_batch=lambda batch, results: conn.send(results))
+
+
+class CelRecognizerWorker(QObject):
+    update = Signal(list)
+
+    def __init__(self):
+        super().__init__()
+        self.process = None
+
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.check_for_results)
+        self.timer.setInterval(1000)
+        self.timer.start(1000)
+    
+    def submit(self, cel_path, video_path):
+        # Cancel an existing process if it exists
+        self.cancel()
+        
+        # Start a new process to run the CelRecognizer
+        self.pipe, child_conn = Pipe()
+        self.process = Process(
+            target=_recognizer_worker_func,
+            args=(child_conn, cel_path, video_path))
+        self.process.start()
+    
+    def check_for_results(self):
+        if self.process is not None:
+            while self.pipe.poll():
+                results = self.pipe.recv()
+                self.update.emit(results)
+
+    def cancel(self):
+        if self.process is not None:
+            self.process.terminate()
+            self.process.join()
+            self.process.close()
+            self.process = None
 
 
 if __name__ == '__main__':
