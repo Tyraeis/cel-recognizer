@@ -1,1 +1,1 @@
-pyinstaller --windowed ./src/main.py
+pyinstaller --windowed --name CelRecognizer ./src/main.py
